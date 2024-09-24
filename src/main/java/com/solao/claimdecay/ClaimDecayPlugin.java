@@ -20,6 +20,7 @@ import net.luckperms.api.LuckPermsProvider;
 import net.luckperms.api.model.user.User;
 import net.luckperms.api.query.QueryOptions;
 import org.bukkit.Bukkit;
+import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -127,7 +128,7 @@ public class ClaimDecayPlugin extends JavaPlugin {
                 Region region = getSelection(claim);
                 if (region != null) {
                     backupClaim(claim.getOwnerID(), region, claim.getID());
-                    resetClaim(claim.getOwnerID(), region);
+                    resetClaim(claim.getOwnerID(), claim);
                 }
             }
         }
@@ -194,30 +195,34 @@ public class ClaimDecayPlugin extends JavaPlugin {
     }
 
 
-    private void resetClaim(UUID playerUUID, Region region) {
+    private void resetClaim(UUID playerUUID, Claim claim) {
         try {
-            // Create an edit session for the world
-            World world = region.getWorld();
-            EditSession editSession = worldEdit.getWorldEdit().getEditSessionFactory().getEditSession(world, -1);
-
-            // Clear the region
-            BlockVector3 min = region.getMinimumPoint();
-            BlockVector3 max = region.getMaximumPoint();
-            for (int x = min.x(); x <= max.x(); x++) {
-                for (int y = min.y(); y <= max.y(); y++) {
-                    for (int z = min.z(); z <= max.z(); z++) {
-                        editSession.setBlock(BlockVector3.at(x, y, z), BlockTypes.AIR.getDefaultState());
-                    }
-                }
+            Region region = getSelection(claim);
+            if (region == null) {
+                getLogger().severe("Failed to get region for claim " + claim.getID());
+                return;
             }
 
-            // Commit the changes
-            editSession.flushSession();
+            // Get the world name
+            String worldName = claim.getLesserBoundaryCorner().getWorld().getName();
 
-            // Optionally, log the success
+            // Get the coordinates of the region
+            int minX = region.getMinimumPoint().x();
+            int minY = region.getMinimumPoint().y();
+            int minZ = region.getMinimumPoint().z();
+            int maxX = region.getMaximumPoint().x();
+            int maxY = region.getMaximumPoint().y();
+            int maxZ = region.getMaximumPoint().z();
+
+            // Construct the command to restore the nature
+            String command = String.format("restorenature %s %d %d %d %d %d %d", worldName, minX, minY, minZ, maxX, maxY, maxZ);
+
+            // Execute the command as the console
+            ConsoleCommandSender console = Bukkit.getServer().getConsoleSender();
+            Bukkit.dispatchCommand(console, command);
+
             getLogger().info("Claim reset successfully for player " + playerUUID);
         } catch (Exception e) {
-            // Optionally, log the failure
             getLogger().severe("Failed to reset claim for player " + playerUUID);
             e.printStackTrace();
         }
