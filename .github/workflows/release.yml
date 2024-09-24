@@ -73,6 +73,7 @@ jobs:
           draft: false
           prerelease: false
           artifacts: ./*.jar
+          skipIfReleaseExists: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         if: steps.get_release.outputs.id == ''
