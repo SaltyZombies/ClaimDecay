@@ -1,0 +1,27 @@
+plugins {
+    id 'java'
+}
+
+group 'com.solao'
+version '1.0.0'
+
+repositories {
+    mavenCentral()
+    maven {
+        url = 'https://hub.spigotmc.org/nexus/content/repositories/snapshots/'
+    }
+    maven {
+        url = 'https://maven.enginehub.org/repo/'
+    }
+}
+
+dependencies {
+    compileOnly 'org.spigotmc:spigot-api:1.21.1-R0.1-SNAPSHOT'
+    compileOnly 'net.luckperms:api:5.4'
+    compileOnly 'com.sk89q.worldedit:worldedit-bukkit:7.2.9'
+    implementation 'org.yaml:snakeyaml:1.29'
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}

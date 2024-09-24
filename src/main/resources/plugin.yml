@@ -1,0 +1,13 @@
+name: ClaimDecay
+main: com.solao.claimdecay.ClaimDecayPlugin
+version: 1.0.0
+author: solao
+website: https://github.com/SeanStoves/ClaimDecay
+api-version: 1.21
+commands:
+  restoreclaim:
+    description: Restore a claim from backup
+    usage: /restoreclaim
+  resetclaim:
+    description: Reset your own claim
+    usage: /resetclaim
