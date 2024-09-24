@@ -13,6 +13,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Extract Tag
+        id: extract_tag
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
       - name: validate gradle wrapper
         uses: gradle/wrapper-validation-action@v1
 
@@ -42,19 +46,44 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Extract Tag
+        id: extract_tag
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
       - name: Download JAR file
         uses: actions/download-artifact@v4
         with:
           name: plugin-jar
 
-      - name: Create Release
+      - name: Get Release ID
+        id: get_release
+        uses: octokit/request-action@v2
+        with:
+          route: GET /repos/${{ github.repository }}/releases/tags/${{ env.TAG_NAME }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create or Update Release
+        id: create_release
         uses: ncipollo/release-action@v1
         with:
-          tag: ${{ github.ref }}
-          name: Release ${{ github.ref }}
-          body: "Release notes for ${{ github.ref }}"
+          tag: ${{ env.TAG_NAME }}
+          name: Release ${{ env.TAG_NAME }}
+          body: "Release notes for ${{ env.TAG_NAME }}"
           draft: false
           prerelease: false
           artifacts: ./*.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: steps.get_release.outputs.id == ''
+
+      - name: Upload Asset to Existing Release
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.get_release.outputs.upload_url }}
+          asset_path: ./*.jar
+          asset_name: ClaimDecay-${{env.TAG_NAME}}.jar
+          asset_content_type: application/java-archive
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: steps.get_release.outputs.id != ''

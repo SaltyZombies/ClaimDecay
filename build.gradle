@@ -3,7 +3,7 @@ plugins {
 }
 
 group 'com.solao'
-version '1.0.0'
+version = System.getenv("GITHUB_REF")?.replace("refs/tags/", "") ?: "1.0.0-SNAPSHOT"
 
 repositories {
     mavenCentral()
@@ -19,15 +19,25 @@ repositories {
     maven {
         url = 'https://mvnrepository.com/artifact/'
     }
+    maven {
+        url 'https://jitpack.io'
+    }
 }
 
 dependencies {
     compileOnly 'org.spigotmc:spigot-api:1.21.1-R0.1-SNAPSHOT'
     compileOnly 'net.luckperms:api:5.4'
     compileOnly 'com.sk89q.worldedit:worldedit-bukkit:7.3.0'
+    compileOnly 'com.github.TechFortress:GriefPrevention:16.18.4'
     implementation 'org.yaml:snakeyaml:2.2'
     implementation 'com.google.code.gson:gson:2.10'
     implementation 'com.google.guava:guava:31.1-jre'
+}
+
+processResources {
+    filesMatching('plugin.yml') {
+        expand 'version': project.version
+    }
 }
 
 tasks.withType(JavaCompile) {
