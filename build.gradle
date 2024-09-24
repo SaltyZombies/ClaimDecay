@@ -16,13 +16,18 @@ repositories {
     maven {
         url = 'https://repo.codemc.org/repository/maven-public/'
     }
+    maven {
+        url = 'https://mvnrepository.com/artifact/'
+    }
 }
 
 dependencies {
     compileOnly 'org.spigotmc:spigot-api:1.21.1-R0.1-SNAPSHOT'
     compileOnly 'net.luckperms:api:5.4'
     compileOnly 'com.sk89q.worldedit:worldedit-bukkit:7.3.0'
-    implementation 'org.yaml:snakeyaml:1.29'
+    implementation 'org.yaml:snakeyaml:2.2'
+    implementation 'com.google.code.gson:gson:2.10'
+    implementation 'com.google.guava:guava:31.1-jre'
 }
 
 tasks.withType(JavaCompile) {

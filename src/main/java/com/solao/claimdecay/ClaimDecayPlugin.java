@@ -1,19 +1,28 @@
 package com.solao.claimdecay;
 
+import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.bukkit.WorldEditPlugin;
-import com.sk89q.worldedit.bukkit.selections.Selection;
-import com.sk89q.worldedit.session.ClipboardHolder;
-import com.sk89q.worldedit.world.registry.WorldData;
+import com.sk89q.worldedit.extent.clipboard.io.ClipboardWriter;
+import com.sk89q.worldedit.regions.Region;
+import com.sk89q.worldedit.world.World;
+import com.sk89q.worldedit.EditSession;
+import com.sk89q.worldedit.extent.clipboard.BlockArrayClipboard;
+import com.sk89q.worldedit.extent.clipboard.Clipboard;
+import com.sk89q.worldedit.extent.clipboard.io.ClipboardFormats;
+import com.sk89q.worldedit.function.operation.ForwardExtentCopy;
+import com.sk89q.worldedit.function.operation.Operations;
+import com.sk89q.worldedit.math.BlockVector3;
+import com.sk89q.worldedit.world.block.BlockTypes;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.LuckPermsProvider;
 import net.luckperms.api.model.user.User;
-import net.luckperms.api.node.Node;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.List;
 
@@ -54,10 +63,10 @@ public class ClaimDecayPlugin extends JavaPlugin {
                 long lastActiveTime = getLastActiveTime(player);
                 long currentTime = System.currentTimeMillis();
                 if (currentTime - lastActiveTime > decayDays * 24 * 60 * 60 * 1000L) {
-                    Selection selection = worldEdit.getSelection(player);
-                    if (selection != null) {
-                        backupClaim(player, selection);
-                        resetClaim(player, selection);
+                    Region region = getSelection(player);
+                    if (region != null) {
+                        backupClaim(player, region);
+                        resetClaim(player, region);
                     }
                 }
             }
@@ -74,22 +83,36 @@ public class ClaimDecayPlugin extends JavaPlugin {
     }
 
     public boolean hasPermission(Player player, String permission) {
-        User user = luckperms.getUserManager().getUser(player.getUniqueId());
+        User user = luckPerms.getUserManager().getUser(player.getUniqueId());
         if (user == null) {
             return false;
         }
-        return user.getCachedData().getPermissionData().checkPermission(Node.builder(permission).build()).asBoolean();
+        return user.getCachedData().getPermissionData().checkPermission(permission).asBoolean();
     }
 
-    private void backupClaim(Player player, Selection selection) {
+    private Region getSelection(Player player) {
+        try {
+            return worldEdit.getSession(player).getSelection(BukkitAdapter.adapt(player.getWorld()));
+        } catch (Exception e) {
+            player.sendMessage("Failed to get selection.");
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private void backupClaim(Player player, Region region) {
         try {
             File schematicFile = new File(getDataFolder(), player.getUniqueId() + ".schematic");
-            ClipboardHolder clipboard = new ClipboardHolder(selection.getClipboard());
-            WorldData worldData = worldEdit.getWorldEdit().getWorldData(selection.getWorld());
-            clipboard.createPaste(worldEdit.getWorldEdit().getEditSessionFactory().getEditSession(selection.getWorld(), -1))
-                    .to(selection.getMinimumPoint())
-                    .build();
-            clipboard.save(schematicFile);
+            EditSession editSession = worldEdit.getWorldEdit().getEditSessionFactory().getEditSession(region.getWorld(), -1);
+            Clipboard clipboard = new BlockArrayClipboard(region);
+            ForwardExtentCopy copy = new ForwardExtentCopy(editSession, region, clipboard, region.getMinimumPoint());
+            Operations.complete(copy);
+
+            // Save the clipboard to the file
+            try (ClipboardWriter writer = ClipboardFormats.findByFile(schematicFile).getWriter(new FileOutputStream(schematicFile))) {
+                writer.write(clipboard);
+            }
+
             player.sendMessage("Claim backed up successfully.");
         } catch (Exception e) {
             player.sendMessage("Failed to backup claim.");
@@ -97,27 +120,29 @@ public class ClaimDecayPlugin extends JavaPlugin {
         }
     }
 
-    private void resetClaim(Player player, Selection selection) {
+    private void resetClaim(Player player, Region region) {
         try {
-            worldEdit.getWorldEdit().getEditSessionFactory().getEditSession(selection.getWorld(), -1)
-                    .regenerate(selection);
+            // Create an edit session for the world
+            World world = region.getWorld();
+            EditSession editSession = worldEdit.getWorldEdit().getEditSessionFactory().getEditSession(world, -1);
+
+            // Clear the region
+            BlockVector3 min = region.getMinimumPoint();
+            BlockVector3 max = region.getMaximumPoint();
+            for (int x = min.getX(); x <= max.getX(); x++) {
+                for (int y = min.getY(); y <= max.getY(); y++) {
+                    for (int z = min.getZ(); z <= max.getZ(); z++) {
+                        editSession.setBlock(BlockVector3.at(x, y, z), BlockTypes.AIR.getDefaultState());
+                    }
+                }
+            }
+
+            // Commit the changes
+            editSession.flushSession();
+
             player.sendMessage("Claim reset successfully.");
         } catch (Exception e) {
             player.sendMessage("Failed to reset claim.");
-            e.printStackTrace();
-        }
-    }
-
-    public void restoreClaim(Player player) {
-        try {
-            File schematicFile = new File(getDataFolder(), player.getUniqueId() + ".schematic");
-            ClipboardHolder clipboard = ClipboardHolder.load(schematicFile);
-            clipboard.createPaste(worldEdit.getWorldEdit().getEditSessionFactory().getEditSession(player.getWorld(), -1))
-                    .to(player.getLocation())
-                    .build();
-            player.sendMessage("Claim restored successfully.");
-        } catch (Exception e) {
-            player.sendMessage("Failed to restore claim.");
             e.printStackTrace();
         }
     }
@@ -133,26 +158,5 @@ public class ClaimDecayPlugin extends JavaPlugin {
         } catch (IOException e) {
             e.printStackTrace();
         }
-    }
-
-    @Override
-    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (command.getName().equalsIgnoreCase("restoreclaim") && sender instanceof Player) {
-            Player player = (Player) sender;
-            restoreClaim(player);
-            return true;
-        } else if (command.getName().equalsIgnoreCase("resetclaim") && sender instanceof Player) {
-            Player player = (Player) sender;
-            Selection selection = worldEdit.getSelection(player);
-            if (selection != null) {
-                backupClaim(player, selection);
-                resetClaim(player, selection);
-                return true;
-            } else {
-                player.sendMessage("No selection found.");
-                return false;
-            }
-        }
-        return false;
     }
 }
