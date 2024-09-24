@@ -1,9 +1,9 @@
 name: Build and Release
 
 on:
-  push:
-    tags:
-      - "*"
+  release:
+    types:
+      - published
 
 jobs:
   build:
@@ -63,21 +63,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create or Update Release
-        id: create_release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: ${{ env.TAG_NAME }}
-          name: Release ${{ env.TAG_NAME }}
-          body: "Release notes for ${{ env.TAG_NAME }}"
-          draft: false
-          prerelease: false
-          artifacts: ./*.jar
-          skipIfReleaseExists: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        if: steps.get_release.outputs.id == ''
-
       - name: Upload Asset to Existing Release
         uses: actions/upload-release-asset@v1
         with:
@@ -87,4 +72,3 @@ jobs:
           asset_content_type: application/java-archive
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        if: steps.get_release.outputs.id != ''
