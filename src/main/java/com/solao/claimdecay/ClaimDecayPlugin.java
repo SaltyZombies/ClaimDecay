@@ -3,6 +3,7 @@ package com.solao.claimdecay;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.bukkit.WorldEditPlugin;
 import com.sk89q.worldedit.extent.clipboard.io.ClipboardWriter;
+import com.sk89q.worldedit.regions.CuboidRegion;
 import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldedit.world.World;
 import com.sk89q.worldedit.EditSession;
@@ -13,18 +14,23 @@ import com.sk89q.worldedit.function.operation.ForwardExtentCopy;
 import com.sk89q.worldedit.function.operation.Operations;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.world.block.BlockTypes;
+import me.ryanhamshire.GriefPrevention.ClaimPermission;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.LuckPermsProvider;
 import net.luckperms.api.model.user.User;
+import net.luckperms.api.query.QueryOptions;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
-
+import me.ryanhamshire.GriefPrevention.Claim;
+import me.ryanhamshire.GriefPrevention.GriefPrevention;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.util.List;
+import java.time.Instant;
+import java.util.*;
+
 
 public class ClaimDecayPlugin extends JavaPlugin {
 
@@ -38,36 +44,90 @@ public class ClaimDecayPlugin extends JavaPlugin {
         this.luckPerms = LuckPermsProvider.get();
         this.worldEdit = (WorldEditPlugin) Bukkit.getPluginManager().getPlugin("WorldEdit");
 
-        // Load last active times
-        lastActiveFile = new File(getDataFolder(), "last_active.yml");
-        if (!lastActiveFile.exists()) {
-            try {
-                lastActiveFile.createNewFile();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-        lastActiveConfig = YamlConfiguration.loadConfiguration(lastActiveFile);
+        Objects.requireNonNull(this.getCommand("exemptclaim")).setExecutor(new ExemptClaimCommand(this));
+        Objects.requireNonNull(this.getCommand("resetclaim")).setExecutor(new ResetClaimCommand(this));
 
-        getServer().getScheduler().runTaskTimer(this, this::checkAndResetClaims, 0L, 20L * 60 * 60 * 24); // Run daily
-
-        // Update last active time on player activity
-        getServer().getPluginManager().registerEvents(new PlayerActivityListener(this), this);
+        getServer().getScheduler().runTaskLater(this, this::checkAndResetClaims, 20L * 60L * 60L);
     }
 
     private void checkAndResetClaims() {
-        List<Player> players = (List<Player>) Bukkit.getOnlinePlayers();
-        for (Player player : players) {
-            if (!hasPermission(player, "decay.exempt")) {
-                int decayDays = getDecayDays(player);
-                long lastActiveTime = getLastActiveTime(player);
-                long currentTime = System.currentTimeMillis();
-                if (currentTime - lastActiveTime > decayDays * 24 * 60 * 60 * 1000L) {
-                    Region region = getSelection(player);
-                    if (region != null) {
-                        backupClaim(player, region);
-                        resetClaim(player, region);
+        // Loop through all claims
+        for (Claim claim : GriefPrevention.instance.dataStore.getClaims()) {
+            Set<UUID> claimPlayerUUIDs = new HashSet<>();
+
+            // Get the owner of the claim
+            claimPlayerUUIDs.add(claim.getOwnerID());
+
+            ArrayList<String> builders = new ArrayList<>();
+            ArrayList<String> containers = new ArrayList<>();
+            ArrayList<String> accessors = new ArrayList<>();
+            ArrayList<String> managers = new ArrayList<>();
+
+            // Get permissions
+            claim.getPermissions(builders, containers, accessors, managers);
+
+            // Add UUIDs from builders
+            for (String builder : builders) {
+                try {
+                    UUID playerUUID = UUID.fromString(builder);
+                    claimPlayerUUIDs.add(playerUUID);
+                } catch (IllegalArgumentException e) {
+                    // Handle the case where the builder is not a UUID
+                }
+            }
+
+            // Add UUIDs from containers
+            for (String container : containers) {
+                try {
+                    UUID playerUUID = UUID.fromString(container);
+                    claimPlayerUUIDs.add(playerUUID);
+                } catch (IllegalArgumentException e) {
+                    // Handle the case where the container is not a UUID
+                }
+            }
+
+            // Add UUIDs from accessors
+            for (String accessor : accessors) {
+                try {
+                    UUID playerUUID = UUID.fromString(accessor);
+                    claimPlayerUUIDs.add(playerUUID);
+                } catch (IllegalArgumentException e) {
+                    // Handle the case where the accessor is not a UUID
+                }
+            }
+
+            // Add UUIDs from managers
+            for (String manager : managers) {
+                try {
+                    UUID playerUUID = UUID.fromString(manager);
+                    claimPlayerUUIDs.add(playerUUID);
+                } catch (IllegalArgumentException e) {
+                    // Handle the case where the manager is not a UUID
+                }
+            }
+
+            boolean allInactive = true;
+            long currentTime = System.currentTimeMillis();
+
+            // Perform actions based on the gathered UUIDs
+            for (UUID playerUUID : claimPlayerUUIDs) {
+                Player player = Bukkit.getPlayer(playerUUID);
+                if (player != null && !hasPermission(player, "decay.exempt")) {
+                    int decayDays = getDecayDays(player);
+                    long lastActiveTime = getLastActiveTime(playerUUID);
+                    if (currentTime - lastActiveTime <= decayDays * 24 * 60 * 60 * 1000L) {
+                        allInactive = false;
+                        break;
                     }
+                }
+            }
+
+            // If all players are inactive, backup and reset the claim
+            if (allInactive) {
+                Region region = getSelection(claim);
+                if (region != null) {
+                    backupClaim(claim.getOwnerID(), region, claim.getID());
+                    resetClaim(claim.getOwnerID(), region);
                 }
             }
         }
@@ -90,19 +150,30 @@ public class ClaimDecayPlugin extends JavaPlugin {
         return user.getCachedData().getPermissionData().checkPermission(permission).asBoolean();
     }
 
-    private Region getSelection(Player player) {
-        try {
-            return worldEdit.getSession(player).getSelection(BukkitAdapter.adapt(player.getWorld()));
-        } catch (Exception e) {
-            player.sendMessage("Failed to get selection.");
-            e.printStackTrace();
+    private Region getSelection(Claim claim) {
+        if (claim == null) {
             return null;
         }
+
+        BlockVector3 minPoint = BlockVector3.at(
+                claim.getLesserBoundaryCorner().getBlockX(),
+                claim.getLesserBoundaryCorner().getBlockY(),
+                claim.getLesserBoundaryCorner().getBlockZ()
+        );
+
+        BlockVector3 maxPoint = BlockVector3.at(
+                claim.getGreaterBoundaryCorner().getBlockX(),
+                claim.getGreaterBoundaryCorner().getBlockY(),
+                claim.getGreaterBoundaryCorner().getBlockZ()
+        );
+
+        World world = (World) Bukkit.getWorld(claim.getLesserBoundaryCorner().getWorld().getName());
+        return new CuboidRegion((World) BukkitAdapter.adapt(world), minPoint, maxPoint);
     }
 
-    private void backupClaim(Player player, Region region) {
+    private void backupClaim(UUID playerUUID, Region region, Long claimId) {
         try {
-            File schematicFile = new File(getDataFolder(), player.getUniqueId() + ".schematic");
+            File schematicFile = new File(getDataFolder(), playerUUID + "-" + claimId + ".schematic");
             EditSession editSession = worldEdit.getWorldEdit().getEditSessionFactory().getEditSession(region.getWorld(), -1);
             Clipboard clipboard = new BlockArrayClipboard(region);
             ForwardExtentCopy copy = new ForwardExtentCopy(editSession, region, clipboard, region.getMinimumPoint());
@@ -113,14 +184,17 @@ public class ClaimDecayPlugin extends JavaPlugin {
                 writer.write(clipboard);
             }
 
-            player.sendMessage("Claim backed up successfully.");
+            // Optionally, log the success
+            getLogger().info("Claim backed up successfully for player " + playerUUID);
         } catch (Exception e) {
-            player.sendMessage("Failed to backup claim.");
+            // Optionally, log the failure
+            getLogger().severe("Failed to backup claim for player " + playerUUID);
             e.printStackTrace();
         }
     }
 
-    private void resetClaim(Player player, Region region) {
+
+    private void resetClaim(UUID playerUUID, Region region) {
         try {
             // Create an edit session for the world
             World world = region.getWorld();
@@ -129,9 +203,9 @@ public class ClaimDecayPlugin extends JavaPlugin {
             // Clear the region
             BlockVector3 min = region.getMinimumPoint();
             BlockVector3 max = region.getMaximumPoint();
-            for (int x = min.getX(); x <= max.getX(); x++) {
-                for (int y = min.getY(); y <= max.getY(); y++) {
-                    for (int z = min.getZ(); z <= max.getZ(); z++) {
+            for (int x = min.x(); x <= max.x(); x++) {
+                for (int y = min.y(); y <= max.y(); y++) {
+                    for (int z = min.z(); z <= max.z(); z++) {
                         editSession.setBlock(BlockVector3.at(x, y, z), BlockTypes.AIR.getDefaultState());
                     }
                 }
@@ -140,23 +214,22 @@ public class ClaimDecayPlugin extends JavaPlugin {
             // Commit the changes
             editSession.flushSession();
 
-            player.sendMessage("Claim reset successfully.");
+            // Optionally, log the success
+            getLogger().info("Claim reset successfully for player " + playerUUID);
         } catch (Exception e) {
-            player.sendMessage("Failed to reset claim.");
+            // Optionally, log the failure
+            getLogger().severe("Failed to reset claim for player " + playerUUID);
             e.printStackTrace();
         }
     }
 
-    private long getLastActiveTime(Player player) {
-        return lastActiveConfig.getLong(player.getUniqueId().toString(), System.currentTimeMillis());
-    }
 
-    public void updateLastActiveTime(Player player) {
-        lastActiveConfig.set(player.getUniqueId().toString(), System.currentTimeMillis());
-        try {
-            lastActiveConfig.save(lastActiveFile);
-        } catch (IOException e) {
-            e.printStackTrace();
+    private long getLastActiveTime(UUID playerUUID) {
+        LuckPerms luckPerms = LuckPermsProvider.get();
+        User user = luckPerms.getUserManager().getUser(playerUUID);
+        if (user != null) {
+            return user.getCachedData().getMetaData(QueryOptions.defaultContextualOptions()).getMetaValue("last-login-time", Long::parseLong).orElse(Instant.now().toEpochMilli());
         }
+        return Instant.now().toEpochMilli();
     }
 }
