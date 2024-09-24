@@ -55,6 +55,6 @@ jobs:
           body: "Release notes for ${{ github.ref }}"
           draft: false
           prerelease: false
-          artifacts: build/libs/*.jar
+          artifacts: ./*.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
