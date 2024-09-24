@@ -57,9 +57,11 @@ jobs:
 
       - name: Get Release ID
         id: get_release
-        uses: octokit/request-action@v2
+        uses: octokit/request-action@v2.x
         with:
-          route: GET /repos/${{ github.repository }}/releases/tags/${{ env.TAG_NAME }}
+          route: GET /repos/{owner}/{repo}/releases/${{ env.TAG_NAME }}
+          owner: SeanStoves
+          repo: ClaimDecay
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
