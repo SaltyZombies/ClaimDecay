@@ -31,6 +31,10 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.*;
+import com.earth2me.essentials.Essentials;
+
+import java.util.UUID;
+import java.time.Instant;
 
 
 public class ClaimDecayPlugin extends JavaPlugin {
@@ -42,6 +46,13 @@ public class ClaimDecayPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        if (getServer().getPluginManager().getPlugin("Essentials") != null) {
+            getLogger().info("EssentialsX found, integrating /seen functionality.");
+        } else {
+            getLogger().severe("EssentialsX not found! Disabling plugin.");
+            getServer().getPluginManager().disablePlugin(this);
+        }
+
         this.luckPerms = LuckPermsProvider.get();
         this.worldEdit = (WorldEditPlugin) Bukkit.getPluginManager().getPlugin("WorldEdit");
 
@@ -194,7 +205,6 @@ public class ClaimDecayPlugin extends JavaPlugin {
         }
     }
 
-
     private void resetClaim(UUID playerUUID, Claim claim) {
         try {
             Region region = getSelection(claim);
@@ -228,13 +238,21 @@ public class ClaimDecayPlugin extends JavaPlugin {
         }
     }
 
-
     private long getLastActiveTime(UUID playerUUID) {
-        LuckPerms luckPerms = LuckPermsProvider.get();
-        User user = luckPerms.getUserManager().getUser(playerUUID);
-        if (user != null) {
-            return user.getCachedData().getMetaData(QueryOptions.defaultContextualOptions()).getMetaValue("last-login-time", Long::parseLong).orElse(Instant.now().toEpochMilli());
+        // Get the Essentials plugin instance
+        Essentials essentials = (Essentials) getServer().getPluginManager().getPlugin("Essentials");
+
+        if (essentials == null) {
+            // Essentials is not installed, return the current time as fallback
+            return Instant.now().toEpochMilli();
         }
+
+        if (essentials.getUser(playerUUID) != null) {
+            // Return the last login time, which is a long value in milliseconds since epoch
+            return essentials.getUser(playerUUID).getLastLogin();
+        }
+
+        // If user is not found in Essentials or never logged in, return the current time
         return Instant.now().toEpochMilli();
     }
 }
